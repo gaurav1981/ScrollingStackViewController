@@ -8,6 +8,14 @@
 
 import UIKit
 
+public enum Position {
+    case start
+    case end
+    case index(_: Int)
+    case after(viewController: UIViewController)
+    case before(viewController: UIViewController)
+}
+
 open class ScrollingStackViewController: UIViewController {
     
     public let scrollView: UIScrollView = UIScrollView()
@@ -38,7 +46,7 @@ open class ScrollingStackViewController: UIViewController {
         }
     }
     
-    static public func defaultAnimate(_ animations: @escaping (Void) -> (), completion: ((Bool) -> Void)?) {
+    static public func defaultAnimate(_ animations: @escaping () -> (), completion: ((Bool) -> Void)?) {
         
         UIView.animate(withDuration: 0.5,
                        delay: 0,
@@ -57,7 +65,7 @@ open class ScrollingStackViewController: UIViewController {
         return self.scrollView.contentSize.height - self.scrollView.frame.size.height
     }
     
-    static public func defaultScrollAnimate(_ animations: @escaping (Void) -> (), completion: ((Bool) -> Void)?) {
+    static public func defaultScrollAnimate(_ animations: @escaping () -> (), completion: ((Bool) -> Void)?) {
         
         UIView.animate(withDuration: 0.75,
                        delay: 0,
@@ -88,13 +96,11 @@ open class ScrollingStackViewController: UIViewController {
         
         let views = ["scrollView" : scrollView,
                      "stackViewBackgroundView" : stackViewBackgroundView,
-                     "stackView" : stackView,
-                     "topGuide" : topLayoutGuide,
-                     "bottomGuide" : bottomLayoutGuide] as [String : Any]
+                     ] as [String : Any]
         
         var constraints = [NSLayoutConstraint]()
         
-        constraints += NSLayoutConstraint.constraints(withVisualFormat: "V:[topGuide][scrollView][bottomGuide]", options: [], metrics: nil, views: views)
+        constraints += NSLayoutConstraint.constraints(withVisualFormat: "V:|[scrollView]|", options: [], metrics: nil, views: views)
         constraints += NSLayoutConstraint.constraints(withVisualFormat: "H:|[scrollView]|", options: [], metrics: nil, views: views)
         
         pinStackView(withBorderWidth: borderWidth)
@@ -129,30 +135,98 @@ open class ScrollingStackViewController: UIViewController {
     }
     
     open func add(viewController: UIViewController) {
-        
-        insert(viewController: viewController, at: stackView.arrangedSubviews.count)
+        insert(viewController: viewController)
+    }
+    
+    open func add(viewController: UIViewController, edgeInsets: UIEdgeInsets? = nil) {
+        insert(viewController: viewController, edgeInsets: edgeInsets)
     }
     
     open func insert(viewController: UIViewController, at index: Int) {
+        insert(viewController: viewController, at: .index(index))
+    }
+    
+    open func insert(viewController: UIViewController, edgeInsets: UIEdgeInsets? = nil, at position: Position = .end) {
+        var insertionIndex: Int?
         
+        switch position {
+        case .start:
+            insertionIndex = 0
+            
+        case .end:
+            insertionIndex = childViewControllers.count
+            
+        case .index(let index):
+            insertionIndex =  min(Int(index), childViewControllers.count)
+            
+        case .after(let afterViewController):
+            if let afterViewIndex = arrangedViewOrContainerIndex(for: afterViewController.view) {
+                insertionIndex = afterViewIndex + 1
+            } else {
+                insertionIndex = childViewControllers.count
+            }
+            
+        case .before(let beforeViewController):
+            if let beforeViewIndex = arrangedViewOrContainerIndex(for: beforeViewController.view) {
+                insertionIndex = beforeViewIndex
+            } else {
+                insertionIndex = childViewControllers.count
+            }
+        }
+            
+        insert(viewController: viewController, edgeInsets: edgeInsets, at: insertionIndex ?? childViewControllers.count)
+    }
+    
+    open func insert(viewController: UIViewController, edgeInsets: UIEdgeInsets?, at index: Int) {
+
         addChildViewController(viewController)
         viewController.didMove(toParentViewController: self)
         
-        stackView.insertArrangedSubview(viewController.view, at: index)
+        if let edgeInsets = edgeInsets {
+            
+            let childView: UIView = viewController.view
+            let containerView = UIView()
+            containerView.translatesAutoresizingMaskIntoConstraints = false
+            childView.translatesAutoresizingMaskIntoConstraints = false
+            containerView.addSubview(childView)
+            
+            let constraints = [
+                childView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: edgeInsets.top),
+                childView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: edgeInsets.left),
+                containerView.bottomAnchor.constraint(equalTo: childView.bottomAnchor, constant: edgeInsets.bottom),
+                containerView.trailingAnchor.constraint(equalTo: childView.trailingAnchor, constant: edgeInsets.right),
+                ]
+            
+            NSLayoutConstraint.activate(constraints)
+            stackView.insertArrangedSubview(containerView, at: index)
+            
+        } else {
+            stackView.insertArrangedSubview(viewController.view, at: index)
+        }
     }
     
     open func remove(viewController: UIViewController) {
+        guard let arrangedView = arrangedView(for: viewController) else { return }
+        stackView.removeArrangedSubview(arrangedView)
         
-        stackView.removeArrangedSubview(viewController.view)
-        
+        viewController.willMove(toParentViewController: nil)
         viewController.removeFromParentViewController()
     }
     
-    open func show(viewController: UIViewController, _ action: (() -> Void)? = nil) {
+    open func show(viewController: UIViewController,
+                   insertIfNeeded insertion: (position: Position, insets: UIEdgeInsets)? = nil,
+                   _ action: (() -> Void)? = nil) {
+        
+        
+        if let insertion = insertion, !isArrangedOrContained(view: viewController.view) || !childViewControllers.contains(viewController) {
+            insert(viewController: viewController, edgeInsets: insertion.insets, at: insertion.position)
+        }
         
         animate({
-            viewController.view.alpha = 1
-            viewController.view.isHidden = false
+            if let view = self.arrangedView(for: viewController) {
+                view.alpha = 1
+                view.isHidden = false
+            }
         }, { isFinished in
             if isFinished {
                 action?()
@@ -163,8 +237,10 @@ open class ScrollingStackViewController: UIViewController {
     open func hide(viewController: UIViewController, _ action: (() -> Void)? = nil) {
         
         animate({
-            viewController.view.alpha = 0
-            viewController.view.isHidden = true
+            if let view = self.arrangedView(for: viewController) {
+                view.alpha = 0
+                view.isHidden = true
+            }
         }, { isFinished in
             if isFinished {
                 action?()
@@ -179,6 +255,10 @@ open class ScrollingStackViewController: UIViewController {
             self.scrollTo(view: viewController.view, {
                 action?()
             })
+        } else if let superview = viewController.view.superview, superview != stackView, self.isArranged(view: superview), self.maxOffsetY > 0 {
+            self.scrollTo(view: superview, {
+                action?()
+            })
         } else {
             viewDidLayoutSubviewsClosure =  { [weak self] in
                 self?.scrollTo(viewController: viewController, {
@@ -187,10 +267,6 @@ open class ScrollingStackViewController: UIViewController {
                 })
             }
         }
-    }
-    
-    private func isArranged(view: UIView) -> Bool {
-        return self.stackView.arrangedSubviews.filter({ $0 == view}).count > 0
     }
     
     private func scrollTo(view: UIView, _ finished: @escaping (() -> Void)) {
@@ -205,4 +281,32 @@ open class ScrollingStackViewController: UIViewController {
         })
     }
     
+    public func isArranged(view: UIView) -> Bool {
+        return arrangedViewIndex(for: view) != nil
+    }
+    
+    public func isArrangedOrContained(view: UIView) -> Bool {
+        return arrangedViewOrContainerIndex(for: view) != nil
+    }
+    
+    public func arrangedView(for viewController: UIViewController) -> UIView? {
+        guard let index = arrangedViewOrContainerIndex(for: viewController.view) else { return nil }
+        return stackView.arrangedSubviews[index]
+    }
+    
+    public func arrangedViewOrContainerIndex(for view: UIView) -> Int? {
+        return arrangedViewIndex(for: view) ?? arrangedViewContainerIndex(for: view)
+    }
+    
+    public func arrangedViewIndex(for view: UIView) -> Int? {
+        return stackView.arrangedSubviews.index(of: view)
+    }
+    
+    public func arrangedViewContainerIndex(for view: UIView) -> Int? {
+        if let containerView = stackView.arrangedSubviews.first(where: { $0.subviews.contains(view) }) {
+            return stackView.arrangedSubviews.index(of: containerView)
+        } else {
+            return nil
+        }
+    }
 }

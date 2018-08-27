@@ -20,14 +20,28 @@ class ViewController: ScrollingStackViewController {
         
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         
-        for x in 1...10 {
+        for x in 1...5 {
             
             let viewController = storyboard.instantiateViewController(withIdentifier: "SegmentController") as! SegmentController
             viewController.count = x
+            viewController.view.backgroundColor = UIColor.color(forRow: x)
             segments += [viewController]
             
             add(viewController: viewController)
         }
+        
+        let insets = UIEdgeInsets(top: 20, left: 40, bottom: 20, right: 40)
+        
+        for x in 6...10 {
+            
+            let viewController = storyboard.instantiateViewController(withIdentifier: "SegmentController") as! SegmentController
+            viewController.count = x
+            viewController.view.backgroundColor = UIColor.color(forRow: x)
+            segments += [viewController]
+            
+            add(viewController: viewController, edgeInsets: insets)
+        }
+
         
         // separators
         spacingColor = UIColor.lightGray
@@ -59,3 +73,19 @@ class ViewController: ScrollingStackViewController {
     }
 }
 
+
+extension UIColor {
+    
+    static let possibleColors: [UIColor] =  [
+        UIColor(red: 246/255, green: 119/255, blue: 118/255, alpha: 1.0),
+        UIColor(red: 250/255, green: 184/255, blue: 146/255, alpha: 1.0),
+        UIColor(red: 255/255, green: 249/255, blue: 174/255, alpha: 1.0),
+        UIColor(red: 184/255, green: 217/255, blue: 200/255, alpha: 1.0),
+        UIColor(red: 114/255, green: 185/255, blue: 226/255, alpha: 1.0),
+        ]
+    
+    static func color(forRow row: Int) -> UIColor {
+        let index = (row - 1) % possibleColors.count
+        return possibleColors[index]
+    }
+}
